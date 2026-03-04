@@ -3,15 +3,17 @@
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\CsrfLabController;
 use App\Http\Controllers\DemoBladeController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SecurityTestController;
 use App\Http\Controllers\SqliLabController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\ValidationLabController;
+use App\Http\Controllers\XSSLabController;
+use App\Http\Controllers\ProfileController;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\VulnerableAuth\VulnerableLoginController;
 use App\Http\Controllers\VulnerableAuth\VulnerableRegisterController;
-use App\Http\Controllers\XSSLabController;
-use Illuminate\Support\Facades\Route;
 
 // Route::get('/dashboard', function () {
 //     return view('dashboard');
@@ -37,7 +39,7 @@ use Illuminate\Support\Facades\Route;
 // ============================================
 
 Route::get('/', function () {
-    return view('home');
+    return view('welcome');
 });
 
 // Route sederhana dengan Closure
@@ -58,53 +60,16 @@ Route::get('/api/status', function () {
 // RESOURCE ROUTES - TICKETS
 // ============================================
 
-// MINGGU 4 HARI 2: Tickets sekarang dilindungi dengan 'auth' middleware
-// Authorization detail ditangani oleh TicketPolicy
-Route::middleware('auth')->group(function () {
-    // Route::resource() otomatis membuat 7 routes:
-    // GET    /tickets           → TicketController@index    (tickets.index)
-    // GET    /tickets/create    → TicketController@create   (tickets.create)
-    // POST   /tickets           → TicketController@store    (tickets.store)
-    // GET    /tickets/{ticket}  → TicketController@show     (tickets.show)
-    // GET    /tickets/{ticket}/edit → TicketController@edit (tickets.edit)
-    // PUT    /tickets/{ticket}  → TicketController@update   (tickets.update)
-    // DELETE /tickets/{ticket}  → TicketController@destroy  (tickets.destroy)
-    Route::resource('tickets', TicketController::class);
+// Route::resource() otomatis membuat 7 routes:
+// GET    /tickets           → TicketController@index    (tickets.index)
+// GET    /tickets/create    → TicketController@create   (tickets.create)
+// POST   /tickets           → TicketController@store    (tickets.store)
+// GET    /tickets/{ticket}  → TicketController@show     (tickets.show)
+// GET    /tickets/{ticket}/edit → TicketController@edit (tickets.edit)
+// PUT    /tickets/{ticket}  → TicketController@update   (tickets.update)
+// DELETE /tickets/{ticket}  → TicketController@destroy  (tickets.destroy)
 
-    // Route tambahan untuk update status (Admin/Staff)
-    Route::patch('/tickets/{ticket}/status', [TicketController::class, 'updateStatus'])
-        ->name('tickets.update-status');
-
-    // Route untuk assign ticket ke staff (Admin only)
-    Route::patch('/tickets/{ticket}/assign', [TicketController::class, 'assign'])
-        ->name('tickets.assign');
-});
-
-// ============================================
-// ADMIN ROUTES - Protected by Role Middleware
-// MINGGU 4 HARI 2: Authorization Implementation
-// ============================================
-use App\Http\Controllers\AdminController;
-
-Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->group(function () {
-    // Admin Dashboard - Overview statistics
-    Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
-
-    // User Management - List all users
-    Route::get('/users', [AdminController::class, 'users'])->name('users');
-
-    // All Tickets - Admin view with filters
-    Route::get('/tickets', [AdminController::class, 'allTickets'])->name('tickets');
-
-    // Assign ticket to staff
-    Route::post('/tickets/{ticket}/assign', [AdminController::class, 'assignTicket'])
-        ->name('tickets.assign');
-});
-
-// Reports - Accessible by Admin & Staff
-Route::get('/reports', [AdminController::class, 'reports'])
-    ->middleware(['auth', 'role:staff,admin'])
-    ->name('admin.reports');
+Route::resource('tickets', TicketController::class);
 
 // ============================================
 // ALTERNATIVE: ROUTES MANUAL
@@ -383,7 +348,7 @@ Route::prefix('sqli-lab')->name('sqli-lab.')->group(function () {
 */
 
 // ============================================================================
-// Auth Lab Pages (Minggu 4 Hari 1 - Authentication)
+// Auth Lab Pages
 // ============================================================================
 Route::prefix('auth-lab')->name('auth-lab.')->group(function () {
     Route::get('/', function () {
@@ -393,23 +358,6 @@ Route::prefix('auth-lab')->name('auth-lab.')->group(function () {
     Route::get('/comparison', function () {
         return view('auth-lab.comparison');
     })->name('comparison');
-});
-
-// ============================================================================
-// Authorization Lab Pages (Minggu 4 Hari 2 - Authorization)
-// ============================================================================
-Route::prefix('authorization-lab')->name('authorization-lab.')->group(function () {
-    Route::get('/', function () {
-        return view('authorization-lab.index');
-    })->name('index');
-
-    Route::get('/login', function () {
-        return view('authorization-lab.login');
-    })->name('login');
-
-    Route::get('/implementation', function () {
-        return view('authorization-lab.implementation');
-    })->name('implementation');
 });
 
 // ============================================================================
@@ -440,10 +388,9 @@ Route::prefix('vulnerable')->name('vulnerable.')->group(function () {
 
     // Dashboard - Uses session instead of auth middleware
     Route::get('/dashboard', function () {
-        if (! session()->has('vulnerable_user')) {
+        if (!session()->has('vulnerable_user')) {
             return redirect()->route('vulnerable.login');
         }
-
         // Pass user from session to view
         return view('vulnerable-auth.dashboard', [
             'user' => session('vulnerable_user'),
@@ -464,6 +411,83 @@ Route::prefix('vulnerable')->name('vulnerable.')->group(function () {
 });
 
 // ============================================================================
-// Secure Auth Routes (Laravel Breeze)
+// Secure Auth Routes
 // ============================================================================
-require __DIR__.'/auth.php';
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'create'])->name('login');
+    Route::post('/login', [LoginController::class, 'store'])->name('login.submit');
+    Route::get('/register', [RegisterController::class, 'create'])->name('register');
+    Route::post('/register', [RegisterController::class, 'store'])->name('register.submit');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
+});
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'create'])->name('login');
+    Route::post('/login', [LoginController::class, 'store']);
+
+    Route::get('/register', [RegisterController::class, 'create'])->name('register');
+    Route::post('/register', [RegisterController::class, 'store']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
+});
+
+Route::prefix('authorization-lab')->name('authorization-lab.')->group(function () {
+    Route::get('/', function () {
+        return view('authorization-lab.index');
+    })->name('index');
+
+    Route::get('/login', function () {
+        return view('authorization-lab.login');
+    })->name('login');
+
+    Route::get('/implementation', function () {
+        return view('authorization-lab.implementation');
+    })->name('implementation');
+});
+
+Route::middleware('auth')->group(function () {
+    // Route::resource() otomatis membuat 7 routes:
+    // GET    /tickets           → TicketController@index    (tickets.index)
+    // GET    /tickets/create    → TicketController@create   (tickets.create)
+    // POST   /tickets           → TicketController@store    (tickets.store)
+    // GET    /tickets/{ticket}  → TicketController@show     (tickets.show)
+    // GET    /tickets/{ticket}/edit → TicketController@edit (tickets.edit)
+    // PUT    /tickets/{ticket}  → TicketController@update   (tickets.update)
+    // DELETE /tickets/{ticket}  → TicketController@destroy  (tickets.destroy)
+    Route::resource('tickets', TicketController::class);
+
+    // Route tambahan untuk update status (Admin/Staff)
+    Route::patch('/tickets/{ticket}/status', [TicketController::class, 'updateStatus'])
+        ->name('tickets.update-status');
+
+    // Route untuk assign ticket ke staff (Admin only)
+    Route::patch('/tickets/{ticket}/assign', [TicketController::class, 'assign'])
+        ->name('tickets.assign');
+});
+
+use App\Http\Controllers\AdminController;
+
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->group(function () {
+    // Admin Dashboard - Overview statistics
+    Route::get('/', [AdminController::class, 'dashboard'])->name('dashboard');
+
+    // User Management - List all users
+    Route::get('/users', [AdminController::class, 'users'])->name('users');
+
+    // All Tickets - Admin view with filters
+    Route::get('/tickets', [AdminController::class, 'allTickets'])->name('tickets');
+
+    // Assign ticket to staff
+    Route::post('/tickets/{ticket}/assign', [AdminController::class, 'assignTicket'])
+        ->name('tickets.assign');
+});
+
+// Reports - Accessible by Admin & Staff
+Route::get('/reports', [AdminController::class, 'reports'])
+    ->middleware(['auth', 'role:staff,admin'])
+    ->name('admin.reports');

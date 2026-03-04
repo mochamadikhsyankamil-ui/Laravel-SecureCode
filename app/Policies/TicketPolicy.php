@@ -1,171 +1,131 @@
 <?php
 
-namespace App\Policies;
+namespace App\Models;
 
-use App\Models\Ticket;
-use App\Models\User;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
 /**
- * TicketPolicy - Authorization logic untuk Ticket model
+ * Model User - SECURE IMPLEMENTATION
  *
- * INTEGRASI MATERI:
- * - Minggu 4 Hari 2: Policy untuk model-based authorization
- * - Menggunakan helper methods dari Model (isAdmin, isStaff, belongsToUser, isEditable)
- *
- * OWASP A01:2025 - Broken Access Control
- * Policy memastikan user hanya bisa mengakses data yang seharusnya.
- *
- * ROLE PERMISSIONS:
- * - Admin: Full access ke semua tickets (via before() hook)
- * - Staff: View all, edit/changeStatus assigned tickets
- * - User: CRUD own tickets only (dengan pembatasan)
- *
- * CARA PENGGUNAAN DI CONTROLLER:
- * 1. authorizeResource() - otomatis map action ke policy method
- * 2. $this->authorize('update', $ticket) - manual check
- * 3. Gate::allows('update', $ticket) - via Gate facade
- *
- * CARA PENGGUNAAN DI BLADE:
- * 1. @can('update', $ticket) ... @endcan
- * 2. @cannot('delete', $ticket) ... @endcannot
+ * Model ini menggunakan best practices:
+ * - Password otomatis di-hash via mutator
+ * - Hidden attributes untuk keamanan
+ * - Proper casting untuk tipe data
  */
-class TicketPolicy
+class User extends Authenticatable
 {
-    /**
-     * Perform pre-authorization checks.
-     * Admin dapat melakukan semua aksi.
-     *
-     * Return null untuk melanjutkan ke method spesifik,
-     * Return true untuk allow, false untuk deny.
-     */
-    public function before(User $user, string $ability): ?bool
-    {
-        // Admin bypass - bisa melakukan semua aksi
-        if ($user->isAdmin()) {
-            return true;
-        }
+    use HasFactory, Notifiable;
 
-        return null; // Lanjut ke method spesifik
+    /**
+     * The attributes that are mass assignable.
+     *
+     * SECURITY: Hanya field yang boleh diisi via mass assignment
+     * Role ditambahkan untuk RBAC (Minggu 4 Hari 2)
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * SECURITY: Password dan remember_token tidak akan muncul
+     * saat model di-convert ke array/JSON
+     *
+     * @var array<int, string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * SECURITY (Minggu 4 Hari 1):
+     * 'hashed' memastikan password selalu di-hash saat di-set (Laravel 10+)
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed', // Auto-hash password! (Minggu 4 Hari 1)
+        ];
     }
 
     /**
-     * Determine whether the user can view any tickets.
-     *
-     * Admin & Staff: Bisa lihat semua tickets
-     * User: Hanya bisa lihat list (filtered di controller)
+     * Check if user is admin
      */
-    public function viewAny(User $user): bool
+    public function isAdmin(): bool
     {
-        // Semua authenticated user bisa akses halaman index
-        // Filtering dilakukan di controller berdasarkan role
-        return true;
+        return $this->role === 'admin';
     }
 
     /**
-     * Determine whether the user can view the ticket.
-     *
-     * Admin: Bisa lihat semua (handled by before())
-     * Staff: Bisa lihat semua tickets
-     * User: Hanya bisa lihat ticket sendiri
+     * Check if user is staff
      */
-    public function view(User $user, Ticket $ticket): bool
+    public function isStaff(): bool
     {
-        // Staff bisa lihat semua tickets
-        if ($user->isStaff()) {
-            return true;
-        }
-
-        // User biasa hanya bisa lihat ticket sendiri
-        return $ticket->belongsToUser($user);
+        return $this->role === 'staff';
     }
 
     /**
-     * Determine whether the user can create tickets.
-     *
-     * Semua authenticated user bisa membuat ticket baru.
+     * Check if user is regular user
      */
-    public function create(User $user): bool
+    public function isUser(): bool
     {
-        return true;
+        return $this->role === 'user';
     }
 
     /**
-     * Determine whether the user can update the ticket.
-     *
-     * Admin: Bisa edit semua (handled by before())
-     * Staff: Bisa edit jika di-assign ke mereka
-     * User: Bisa edit ticket sendiri (jika belum closed)
+     * Check if user has specific role
      */
-    public function update(User $user, Ticket $ticket): bool
+    public function hasRole(string $role): bool
     {
-        // Staff bisa edit jika di-assign ke mereka
-        if ($user->isStaff()) {
-            return $ticket->isAssignedTo($user);
-        }
-
-        // User biasa: hanya bisa edit ticket sendiri DAN belum closed
-        return $ticket->belongsToUser($user) && $ticket->isEditable();
+        return $this->role === $role;
     }
 
     /**
-     * Determine whether the user can delete the ticket.
-     *
-     * Admin: Bisa hapus semua (handled by before())
-     * Staff: TIDAK bisa hapus
-     * User: TIDAK bisa hapus
-     *
-     * SECURITY: Hanya admin yang boleh menghapus ticket
+     * Check if user has any of the given roles
      */
-    public function delete(User $user, Ticket $ticket): bool
+    public function hasAnyRole(array $roles): bool
     {
-        // Hanya admin yang bisa delete (sudah di-handle before())
-        // Staff dan User tidak bisa delete
-        return false;
+        return in_array($this->role, $roles);
     }
 
     /**
-     * Determine whether the user can restore the ticket (soft delete).
+     * Tickets yang dibuat oleh user ini
+     * Penggunaan: $user->tickets
      */
-    public function restore(User $user, Ticket $ticket): bool
+    public function tickets()
     {
-        // Hanya admin
-        return false;
+        return $this->hasMany(Ticket::class, 'user_id');
     }
 
     /**
-     * Determine whether the user can permanently delete the ticket.
+     * Tickets yang di-assign ke user ini (untuk staff)
+     * Penggunaan: $user->assignedTickets
      */
-    public function forceDelete(User $user, Ticket $ticket): bool
+    public function assignedTickets()
     {
-        // Hanya admin
-        return false;
+        return $this->hasMany(Ticket::class, 'assigned_to');
     }
 
     /**
-     * Determine whether the user can assign staff to ticket.
-     *
-     * Hanya Admin yang bisa assign staff ke ticket.
+     * Scope untuk mencari user berdasarkan email
+     * SECURE: Menggunakan Eloquent (parameterized query)
      */
-    public function assign(User $user, Ticket $ticket): bool
+    public function scopeByEmail($query, $email)
     {
-        // Hanya admin (sudah di-handle before())
-        return false;
-    }
-
-    /**
-     * Determine whether the user can change ticket status.
-     *
-     * Admin: Bisa ubah semua status
-     * Staff: Bisa ubah status ticket yang di-assign
-     * User: TIDAK bisa ubah status
-     */
-    public function changeStatus(User $user, Ticket $ticket): bool
-    {
-        // Staff bisa ubah status jika di-assign
-        if ($user->isStaff()) {
-            return $ticket->isAssignedTo($user);
-        }
-
-        return false;
+        return $query->where('email', $email);
     }
 }
